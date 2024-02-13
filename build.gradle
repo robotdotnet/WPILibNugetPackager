@@ -1,0 +1,169 @@
+plugins {
+  id 'cpp'
+  id 'edu.wpi.first.wpilib.repositories.WPILibRepositoriesPlugin' version '2020.2'
+  id 'edu.wpi.first.NativeUtils' version '2024.7.0'
+}
+
+if (project.hasProperty('releaseMode')) {
+  wpilibRepositories.addAllReleaseRepositories(project)
+} else {
+  wpilibRepositories.addAllDevelopmentRepositories(project)
+}
+
+nativeUtils.addWpiNativeUtils()
+
+nativeUtils {
+    wpi {
+        configureDependencies {
+            wpiVersion = "2024.+"
+            opencvYear = "frc2024"
+            googleTestYear = "frc2024"
+            niLibVersion = "2024.2.1"
+            opencvVersion = "4.8.0-2"
+            googleTestVersion = "1.14.0-1"
+        }
+    }
+}
+
+def supportedPlatforms = [
+  "windowsx86-64",
+  "windowsarm64",
+  "osxuniversal",
+  "linuxx86-64",
+  "linuxarm64"
+]
+
+// Register all platforms
+model {
+  platforms {
+    supportedPlatforms.each {
+      "$it"(NativePlatform) {
+
+      }
+    }
+  }
+}
+
+nativeUtils {
+  nativeDependencyContainer {
+    cscorecvstatic(getNativeDependencyTypeClass('WPISharedMavenDependency')) {
+      version = "2024.+"
+      groupId = "edu.wpi.first.cscore"
+      artifactId = "cscore-jnicvstatic"
+      ext = "zip"
+
+      headerClassifier = "headers"
+      targetPlatforms = [
+        "windowsx86-64",
+        "windowsarm64",
+        "linuxarm64",
+        "linuxx86-64",
+        "linuxathena",
+        "linuxarm32",
+        "osxuniversal"
+      ]
+    }
+  }
+}
+
+def platformMap = [
+  "windowsx86-64": "win-x64",
+  "windowsarm64": "win-arm64",
+  "osxarm64": "osx-arm64",
+  "osxx86-64": "osx-x64",
+  "linuxx86-64": "linux-x64",
+  "linuxarm64": "linux-arm64"
+]
+
+def rust_triple(targetPlatform) {
+  def platformName = targetPlatform.name
+  if (platformName == "linuxathena") {
+    return "arm-unknown-linux-gnueabi"
+  } else if (platformName == "linuxarm32") {
+    return "arm-unknown-linux-gnueabihf"
+  } else if (platformName == "linuxarm64") {
+    return "aarch64-unknown-linux-gnu"
+  } else if (platformName == "linuxx86-64") {
+    return "x86_64-unknown-linux-gnu"
+  } else if (platformName == "osxuniversal") {
+    return "x86_64-apple-darwin"
+  } else if (platformName == "windowsx86-64") {
+    return "x86_64-pc-windows-msvc"
+  } else if (platformName == "windowsarm64") {
+    return "aarch64-pc-windows-msvc"
+  } else {
+      println "Unknown target platform $platformName"
+      return null
+  }
+}
+
+def sets = [
+  wpiutil: "wpiutil_shared",
+  hal: "hal_shared",
+  wpinet: "wpinet_shared",
+  ntcore: "ntcore_shared",
+  cscore: "cscorecvstatic"
+]
+
+
+
+void generateFile(String name, String platform, Object[] files) {
+  def nuspec = file("runtime.nuspec").text
+  // TODO version
+  nuspec = nuspec.replace("REPLACEMELIBRARYNAME", name).replace("REPLACEMEARCH", platform).replace("REPLACEMEVERSION", "2024")
+
+  // Make tmp folder
+  def packFolder = file("build/nugettmp")
+  delete(packFolder)
+  packFolder.mkdirs()
+
+  file("${packFolder}/lib${name}.runtime.${platform}.2024.nuspec").text = nuspec
+
+  def outputFolder = file("${packFolder}/runtimes/${platform}/native")
+  outputFolder.mkdirs()
+
+  copy {
+    into outputFolder
+    from files
+  }
+
+  exec {
+    executable = file("nuget.exe")
+    args "pack"
+    args packFolder
+    args "-OutputDirectory"
+    args file("build/nugetpackages")
+  }
+}
+
+task updateRustLibs() {
+  doLast {
+    delete(file("build/nugetpackages"))
+    sets.each { set -> {
+      nativeUtils.nativeDependencyContainer.getByName(set.value, libset -> {
+        def releaseBuildType = nativeUtils.buildTypes.named('release').get()
+        for (targetPlatform in nativeUtils.platforms) {
+          def resolved = libset.resolveNativeDependency(targetPlatform, releaseBuildType, java.util.Optional.empty()).get()
+
+          def libs = []
+
+          resolved.getRuntimeFiles().forEach({ f -> libs += f })
+
+          def platform = targetPlatform.name
+
+          // Run it twice for osx
+          if (targetPlatform.name == "osxuniversal") {
+            platform = "osxarm64"
+            generateFile(set.key, platformMap['osxx86-64'], libs)
+          }
+
+          generateFile(set.key, platformMap[platform], libs)
+        }
+      })
+    }}
+  }
+}
+
+wrapper {
+  gradleVersion '8.5'
+}
