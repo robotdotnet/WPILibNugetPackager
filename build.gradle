@@ -102,29 +102,31 @@ def sets = [
   hal: "hal_shared",
   wpinet: "wpinet_shared",
   ntcore: "ntcore_shared",
-  cscore: "cscorecvstatic"
+  cscore: "cscore_shared"
 ]
 
 
 
-void generateFile(String name, String platform, Object[] files) {
+void generateFile(String name, Map<String, ArrayList> platformFiles) {
   def nuspec = file("runtime.nuspec").text
   // TODO version
-  nuspec = nuspec.replace("REPLACEMELIBRARYNAME", name).replace("REPLACEMEARCH", platform).replace("REPLACEMEVERSION", "2024")
+  nuspec = nuspec.replace("REPLACEMELIBRARYNAME", name).replace("REPLACEMEVERSION", "2024.0.0")
 
   // Make tmp folder
   def packFolder = file("build/nugettmp")
   delete(packFolder)
   packFolder.mkdirs()
 
-  file("${packFolder}/lib${name}.runtime.${platform}.2024.nuspec").text = nuspec
+  file("${packFolder}/FRC.${name}.runtime.2024.nuspec").text = nuspec
 
-  def outputFolder = file("${packFolder}/runtimes/${platform}/native")
-  outputFolder.mkdirs()
+  for (def o : platformFiles) {
+    def outputFolder = file("${packFolder}/runtimes/${o.key}/native")
+    outputFolder.mkdirs()
 
-  copy {
-    into outputFolder
-    from files
+    copy {
+      into outputFolder
+      from o.value
+    }
   }
 
   exec {
@@ -136,29 +138,45 @@ void generateFile(String name, String platform, Object[] files) {
   }
 }
 
+def nameMap = [
+  wpiutil: "WPIUtil",
+  hal: "WPIHal",
+  wpinet: "WPINet",
+  ntcore: "NetworkTables",
+  cscore: "CsCore"
+]
+
 task updateRustLibs() {
   doLast {
     delete(file("build/nugetpackages"))
     sets.each { set -> {
       nativeUtils.nativeDependencyContainer.getByName(set.value, libset -> {
         def releaseBuildType = nativeUtils.buildTypes.named('release').get()
+        def map = [:]
         for (targetPlatform in nativeUtils.platforms) {
           def resolved = libset.resolveNativeDependency(targetPlatform, releaseBuildType, java.util.Optional.empty()).get()
 
           def libs = []
 
-          resolved.getRuntimeFiles().forEach({ f -> libs += f })
+          resolved.getRuntimeFiles().forEach({ f ->
+            println f.name
+            if (!f.name.contains('jni')) {
+              libs += f
+            }
+          })
 
           def platform = targetPlatform.name
 
           // Run it twice for osx
           if (targetPlatform.name == "osxuniversal") {
             platform = "osxarm64"
-            generateFile(set.key, platformMap['osxx86-64'], libs)
+            map.put(platformMap['osxx86-64'], libs)
           }
 
-          generateFile(set.key, platformMap[platform], libs)
+          map.put(platformMap[platform], libs)
         }
+
+        generateFile(nameMap[set.key], map)
       })
     }}
   }
