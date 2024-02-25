@@ -105,19 +105,22 @@ def sets = [
   cscore: "cscore_shared"
 ]
 
-
-
-void generateFile(String name, Map<String, ArrayList> platformFiles) {
-  def nuspec = file("runtime.nuspec").text
+void generateFile(String name, nativeName, Map<String, ArrayList> platformFiles) {
+  //def nuspec = file("runtime.nuspec").text
   // TODO version
-  nuspec = nuspec.replace("REPLACEMELIBRARYNAME", name).replace("REPLACEMEVERSION", "2024.0.0")
+  //nuspec = nuspec.replace("REPLACEMELIBRARYNAME", name).replace("REPLACEMEVERSION", "2024.0.0")
 
   // Make tmp folder
   def packFolder = file("build/nugettmp")
   delete(packFolder)
   packFolder.mkdirs()
 
-  file("${packFolder}/FRC.${name}.runtime.2024.nuspec").text = nuspec
+  //file("${packFolder}/FRC.${name}.runtime.2024.nuspec").text = nuspec
+  copy {
+    from file("nugettmp.csproj")
+    from file("wpilib-128.png")
+    into packFolder
+  }
 
   for (def o : platformFiles) {
     def outputFolder = file("${packFolder}/runtimes/${o.key}/native")
@@ -130,10 +133,12 @@ void generateFile(String name, Map<String, ArrayList> platformFiles) {
   }
 
   exec {
-    executable = file("nuget.exe")
+    executable = "dotnet"
     args "pack"
     args packFolder
-    args "-OutputDirectory"
+    args "/p:LibraryName=${name}"
+    args "/p:NativeLibraryName=${nativeName}"
+    args "-o"
     args file("build/nugetpackages")
   }
 }
@@ -144,6 +149,14 @@ def nameMap = [
   wpinet: "WPINet",
   ntcore: "NetworkTables",
   cscore: "CsCore"
+]
+
+def nativeNameMap = [
+  wpiutil: "wpiutil",
+  hal: "wpiHal",
+  wpinet: "wpinet",
+  ntcore: "ntcore",
+  cscore: "cscore"
 ]
 
 task updateRustLibs() {
@@ -176,7 +189,7 @@ task updateRustLibs() {
           map.put(platformMap[platform], libs)
         }
 
-        generateFile(nameMap[set.key], map)
+        generateFile(nameMap[set.key], nativeNameMap[set.key], map)
       })
     }}
   }

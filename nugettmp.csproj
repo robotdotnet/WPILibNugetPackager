@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>FRC.$(LibraryName).runtime</AssemblyName>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <Authors>RobotDotNet</Authors>
+    <PackageLicenseExpression>BSD-3-Clause</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/wpilibsuite/allwpilib</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/wpilibsuite/allwpilib</RepositoryUrl>
+    <RepositoryCommit>123456</RepositoryCommit>
+    <PackageIcon>wpilib-128.png</PackageIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+      <None Include="runtimes\win-x64\native\$(NativeLibraryName).dll" Pack="true" PackagePath="runtimes\win-x64\native\" />
+      <None Include="runtimes\win-arm64\native\$(NativeLibraryName).dll" Pack="true" PackagePath="runtimes\win-arm64\native\" />
+      <None Include="runtimes\linux-x64\native\lib$(NativeLibraryName).so" Pack="true" PackagePath="runtimes\linux-x64\native\" />
+      <None Include="runtimes\linux-arm64\native\lib$(NativeLibraryName).so" Pack="true" PackagePath="runtimes\linux-arm64\native\" />
+      <None Include="runtimes\osx-x64\native\lib$(NativeLibraryName).dylib" Pack="true" PackagePath="runtimes\osx-x64\native\" />
+      <None Include="runtimes\osx-arm64\native\lib$(NativeLibraryName).dylib" Pack="true" PackagePath="runtimes\osx-arm64\native\" />
+      <None Include="wpilib-128.png" Pack="true" PackagePath="\"/>
+  </ItemGroup>
+
+
+</Project>
