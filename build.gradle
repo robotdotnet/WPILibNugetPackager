@@ -105,7 +105,8 @@ def sets = [
   cscore: "cscore_shared"
 ]
 
-void generateFile(String name, nativeName, Map<String, ArrayList> platformFiles) {
+void generateFile(String name, String nativeName, String version, Map<String, ArrayList> platformFiles) {
+  println version
   //def nuspec = file("runtime.nuspec").text
   // TODO version
   //nuspec = nuspec.replace("REPLACEMELIBRARYNAME", name).replace("REPLACEMEVERSION", "2024.0.0")
@@ -138,6 +139,7 @@ void generateFile(String name, nativeName, Map<String, ArrayList> platformFiles)
     args packFolder
     args "/p:LibraryName=${name}"
     args "/p:NativeLibraryName=${nativeName}"
+    args "/p:Version=${version}"
     args "-o"
     args file("build/nugetpackages")
   }
@@ -159,20 +161,27 @@ def nativeNameMap = [
   cscore: "cscore"
 ]
 
-task updateRustLibs() {
+task createPackages() {
   doLast {
     delete(file("build/nugetpackages"))
     sets.each { set -> {
       nativeUtils.nativeDependencyContainer.getByName(set.value, libset -> {
         def releaseBuildType = nativeUtils.buildTypes.named('release').get()
         def map = [:]
+        def version = null
         for (targetPlatform in nativeUtils.platforms) {
           def resolved = libset.resolveNativeDependency(targetPlatform, releaseBuildType, java.util.Optional.empty()).get()
+
+          def artifactVersion = libset.getViewForArtifact(targetPlatform.name, "RUNTIME", java.util.Optional.empty()).artifacts.first().id.componentIdentifier.version
+          if (version == null) {
+            version = artifactVersion
+          } else if (version != artifactVersion) {
+            throw new GradleException("Versions do not match")
+          }
 
           def libs = []
 
           resolved.getRuntimeFiles().forEach({ f ->
-            println f.name
             if (!f.name.contains('jni')) {
               libs += f
             }
@@ -189,7 +198,7 @@ task updateRustLibs() {
           map.put(platformMap[platform], libs)
         }
 
-        generateFile(nameMap[set.key], nativeNameMap[set.key], map)
+        generateFile(nameMap[set.key], nativeNameMap[set.key], version, map)
       })
     }}
   }
