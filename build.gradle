@@ -1,9 +1,10 @@
 plugins {
   id 'cpp'
-  id 'edu.wpi.first.wpilib.repositories.WPILibRepositoriesPlugin' version '2020.2'
-  id 'edu.wpi.first.NativeUtils' version '2024.7.0'
+  id 'edu.wpi.first.wpilib.repositories.WPILibRepositoriesPlugin' version '2025.0'
+  id 'edu.wpi.first.NativeUtils' version '2025.10.1'
 }
 
+wpilibRepositories.use2027Repos()
 if (project.hasProperty('releaseMode')) {
   wpilibRepositories.addAllReleaseRepositories(project)
 } else {
@@ -16,9 +17,8 @@ nativeUtils {
     wpi {
         configureDependencies {
             wpiVersion = "2025.+"
-            opencvYear = "frc2024"
-            niLibVersion = "2025.0.0"
-            opencvVersion = "4.8.0-2"
+            opencvYear = "frc2025"
+            opencvVersion = "4.10.0-3"
         }
     }
 }
@@ -45,7 +45,7 @@ model {
 nativeUtils {
   nativeDependencyContainer {
     cscorecvstatic(getNativeDependencyTypeClass('WPISharedMavenDependency')) {
-      version = "2024.+"
+      version = "2025.+"
       groupId = "edu.wpi.first.cscore"
       artifactId = "cscore-jnicvstatic"
       ext = "zip"
@@ -73,34 +73,13 @@ def platformMap = [
   "linuxarm64": "linux-arm64"
 ]
 
-def rust_triple(targetPlatform) {
-  def platformName = targetPlatform.name
-  if (platformName == "linuxathena") {
-    return "arm-unknown-linux-gnueabi"
-  } else if (platformName == "linuxarm32") {
-    return "arm-unknown-linux-gnueabihf"
-  } else if (platformName == "linuxarm64") {
-    return "aarch64-unknown-linux-gnu"
-  } else if (platformName == "linuxx86-64") {
-    return "x86_64-unknown-linux-gnu"
-  } else if (platformName == "osxuniversal") {
-    return "x86_64-apple-darwin"
-  } else if (platformName == "windowsx86-64") {
-    return "x86_64-pc-windows-msvc"
-  } else if (platformName == "windowsarm64") {
-    return "aarch64-pc-windows-msvc"
-  } else {
-      println "Unknown target platform $platformName"
-      return null
-  }
-}
-
 def sets = [
   wpiutil: "wpiutil_shared",
   hal: "hal_shared",
   wpinet: "wpinet_shared",
   ntcore: "ntcore_shared",
-  cscore: "cscore_shared"
+  cscore: "cscore_shared",
+  datalog: "datalog_shared"
 ]
 
 void generateFile(String name, String nativeName, String version, Map<String, ArrayList> platformFiles) {
@@ -110,7 +89,7 @@ void generateFile(String name, String nativeName, String version, Map<String, Ar
   //nuspec = nuspec.replace("REPLACEMELIBRARYNAME", name).replace("REPLACEMEVERSION", "2024.0.0")
 
   // Make tmp folder
-  def packFolder = file("build/nugettmp")
+  def packFolder = file("build/nugettmp/$name")
   delete(packFolder)
   packFolder.mkdirs()
 
@@ -148,7 +127,8 @@ def nameMap = [
   hal: "WPIHal",
   wpinet: "WPINet",
   ntcore: "NetworkTables",
-  cscore: "CsCore"
+  cscore: "CsCore",
+  datalog: "DataLog",
 ]
 
 def nativeNameMap = [
@@ -156,17 +136,21 @@ def nativeNameMap = [
   hal: "wpiHal",
   wpinet: "wpinet",
   ntcore: "ntcore",
-  cscore: "cscore"
+  cscore: "cscore",
+  datalog: "datalog",
 ]
 
 task createPackages() {
   doLast {
     delete(file("build/nugetpackages"))
+
+    def version = null
+
     sets.each { set -> {
       nativeUtils.nativeDependencyContainer.getByName(set.value, libset -> {
         def releaseBuildType = nativeUtils.buildTypes.named('release').get()
         def map = [:]
-        def version = null
+
         for (targetPlatform in nativeUtils.platforms) {
           def resolved = libset.resolveNativeDependency(targetPlatform, releaseBuildType, java.util.Optional.empty()).get()
 
@@ -199,6 +183,30 @@ task createPackages() {
         generateFile(nameMap[set.key], nativeNameMap[set.key], version, map)
       })
     }}
+
+    def joinedFiles = String.join('","', nameMap.values())
+
+    file("build/nugetpackages").mkdirs()
+    def pushFile = file("build/nugetpackages/pushartifacts.ps1")
+    pushFile.text = """
+param (
+    [Parameter(Mandatory = \$true)]
+    [string]\$ApiKey
+)
+
+Set-StrictMode -Version 'Latest'
+\$PSDefaultParameterValues['*:ErrorAction'] = 'Stop'
+
+\$Artifacts = "$joinedFiles"
+\$Version = "$version"
+\$DeployRoot = "https://wpilib.jfrog.io/artifactory/api/nuget/wpilib-nuget-development-local"
+
+foreach (\$Artifact in \$Artifacts) {
+    \$FilePath = (Join-Path \$PSScriptRoot "FRC.\$Artifact.runtime.\$Version.nupkg")
+    \$DeployUrl = "\$DeployRoot/FRC.\$Artifact.runtime/\$Version"
+    dotnet nuget push \$FilePath -s \$DeployUrl -k \$ApiKey
+}
+"""
   }
 }
 
