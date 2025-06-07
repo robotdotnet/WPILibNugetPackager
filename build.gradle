@@ -28,7 +28,8 @@ def supportedPlatforms = [
   "windowsarm64",
   "osxuniversal",
   "linuxx86-64",
-  "linuxarm64"
+  "linuxarm64",
+  "linuxsystemcore",
 ]
 
 // Register all platforms
@@ -56,8 +57,7 @@ nativeUtils {
         "windowsarm64",
         "linuxarm64",
         "linuxx86-64",
-        "linuxathena",
-        "linuxarm32",
+        "linuxsystemcore",
         "osxuniversal"
       ]
     }
@@ -70,7 +70,8 @@ def platformMap = [
   "osxarm64": "osx-arm64",
   "osxx86-64": "osx-x64",
   "linuxx86-64": "linux-x64",
-  "linuxarm64": "linux-arm64"
+  "linuxarm64": "linux-arm64",
+  "linuxsystemcore": "linux-arm64", // This is a special case, we handle it separately
 ]
 
 def sets = [
@@ -83,17 +84,11 @@ def sets = [
 ]
 
 void generateFile(String name, String nativeName, String version, Map<String, ArrayList> platformFiles) {
-  println version
-  //def nuspec = file("runtime.nuspec").text
-  // TODO version
-  //nuspec = nuspec.replace("REPLACEMELIBRARYNAME", name).replace("REPLACEMEVERSION", "2024.0.0")
-
   // Make tmp folder
   def packFolder = file("build/nugettmp/$name")
   delete(packFolder)
   packFolder.mkdirs()
 
-  //file("${packFolder}/FRC.${name}.runtime.2024.nuspec").text = nuspec
   copy {
     from file("nugettmp.csproj")
     from file("wpilib-128.png")
@@ -152,6 +147,10 @@ task createPackages() {
         def map = [:]
 
         for (targetPlatform in nativeUtils.platforms) {
+          if (targetPlatform.name == "linuxsystemcore") {
+            // Skip linuxsystemcore, we handle it separately
+            continue
+          }
           def resolved = libset.resolveNativeDependency(targetPlatform, releaseBuildType, java.util.Optional.empty()).get()
 
           def artifactVersion = libset.getViewForArtifact(targetPlatform.name, "RUNTIME", java.util.Optional.empty()).artifacts.first().id.componentIdentifier.version
@@ -181,6 +180,33 @@ task createPackages() {
         }
 
         generateFile(nameMap[set.key], nativeNameMap[set.key], version, map)
+
+        // Generate a custom systemcore image
+        def systemcoreMap = [:];
+        {
+          def targetPlatform = nativeUtils.platforms.named('linuxsystemcore').get()
+          def resolved = libset.resolveNativeDependency(targetPlatform, releaseBuildType, java.util.Optional.empty()).get()
+
+          def artifactVersion = libset.getViewForArtifact(targetPlatform.name, "RUNTIME", java.util.Optional.empty()).artifacts.first().id.componentIdentifier.version
+          if (version == null) {
+            version = artifactVersion
+          } else if (version != artifactVersion) {
+            throw new GradleException("Versions do not match")
+          }
+
+          def libs = []
+
+          resolved.getRuntimeFiles().forEach({ f ->
+            if (!f.name.contains('jni')) {
+              libs += f
+            }
+          })
+
+          def platform = targetPlatform.name
+
+          systemcoreMap.put(platformMap[platform], libs)
+          generateFile(nameMap[set.key] + ".SystemCore", nativeNameMap[set.key], version, systemcoreMap)
+        }
       })
     }}
 
@@ -204,6 +230,10 @@ Set-StrictMode -Version 'Latest'
 foreach (\$Artifact in \$Artifacts) {
     \$FilePath = (Join-Path \$PSScriptRoot "FRC.\$Artifact.runtime.\$Version.nupkg")
     \$DeployUrl = "\$DeployRoot/FRC.\$Artifact.runtime/\$Version"
+    dotnet nuget push \$FilePath -s \$DeployUrl -k \$ApiKey
+
+    \$FilePath = (Join-Path \$PSScriptRoot "FRC.\$Artifact.SystemCore.runtime.\$Version.nupkg")
+    \$DeployUrl = "\$DeployRoot/FRC.\$Artifact.SystemCore.runtime/\$Version"
     dotnet nuget push \$FilePath -s \$DeployUrl -k \$ApiKey
 }
 """
